@@ -9,9 +9,7 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
-	"time"
 
 	"code.google.com/p/go.net/websocket"
 )
@@ -32,18 +30,11 @@ type connection struct {
 	mu sync.RWMutex
 }
 
-func randDelay() time.Duration {
-	return time.Duration(rand.Intn(1500)) * time.Millisecond
-}
-
 //Sends a message to the user at the other end of this websocket connection
 //Notify the hub when finished by sending an empty struct over the fin channel
 func (c *connection) Send(message string, fin chan struct{}) {
-	delay := randDelay()
-	fmt.Printf("conn.Send: message '''%s''' will be sent to connection %v after: %v\n", message, c, delay)
-	time.Sleep(delay)
 	defer func() {
-		fmt.Printf("conn.Send: message '''%s''' to %v happened after %v\n", message, c, delay)
+		fmt.Printf("conn.Send: message '''%s''' to %v\n", message, c)
 
 		//Tell the calling function that this goroutine is done sending
 		fin <- struct{}{}
@@ -120,6 +111,12 @@ func (c *connection) writer() {
 // data to anyone registered to any ancestor channels.
 
 func wsHandler(ws *websocket.Conn) {
+	//When we try to handle this, see if the hub exists.
+	//If not, create it.
+	if h == nil {
+		h = NewHub()
+		go h.run()
+	}
 	//Buffer up to 256 messages for this client
 	c := &connection{send: make(chan string, 256), ws: ws}
 

@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"sync"
-	//"time"
 )
 
 type connectionMap struct {
 	m  map[*connection]struct{}
 	mu sync.RWMutex
+	//exists bool
 }
 
 type hub struct {
@@ -29,8 +29,7 @@ type hub struct {
 
 func NewHub() *hub {
 	return &hub{
-		//broadcast:   make(chan string, 256),
-		broadcast:   make(chan string),
+		broadcast:   make(chan string, 256), //Guarantee up to 256 messages in order
 		register:    make(chan *connection),
 		unregister:  make(chan *connection),
 		connections: connectionMap{m: make(map[*connection]struct{})},
@@ -57,7 +56,6 @@ func (h *hub) run() {
 }
 
 func (h *hub) connect(connection *connection) {
-	//time.Sleep(randDelay())
 	h.connections.mu.Lock()
 	h.connections.m[connection] = struct{}{}
 	numCons := len(h.connections.m)
