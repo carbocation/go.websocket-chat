@@ -16,6 +16,8 @@ type hub struct {
 	connections connectionMap
 
 	// Inbound messages from the connections.
+	//The buffer, if any, guarantees the number of
+	//messages which will be received by every client in order
 	broadcast chan string
 
 	// Register requests from the connections.
@@ -27,6 +29,7 @@ type hub struct {
 
 func NewHub() *hub {
 	return &hub{
+		//broadcast:   make(chan string, 256),
 		broadcast:   make(chan string),
 		register:    make(chan *connection),
 		unregister:  make(chan *connection),
@@ -57,15 +60,20 @@ func (h *hub) connect(connection *connection) {
 	//time.Sleep(randDelay())
 	h.connections.mu.Lock()
 	h.connections.m[connection] = struct{}{}
+	numCons := len(h.connections.m)
 	h.connections.mu.Unlock()
 
-	h.broadcast <- fmt.Sprintf("hub.connect: %v connected", connection)
+	//Unless register and unregister have a buffer, make sure any messaging during these
+	//processes is concurrent.
+	go func() { h.broadcast <- fmt.Sprintf("hub.connect: %v connected", connection) }()
 	fmt.Printf("hub.connect: %v connected\n", connection)
+	fmt.Printf("hub.connect: %d clients currently connected\n", numCons)
 }
 
 func (h *hub) disconnect(connection *connection) {
 	h.connections.mu.Lock()
 	delete(h.connections.m, connection)
+	numCons := len(h.connections.m)
 	h.connections.mu.Unlock()
 
 	connection.mu.Lock()
@@ -74,8 +82,12 @@ func (h *hub) disconnect(connection *connection) {
 
 	close(connection.send)
 	connection.ws.Close()
-	h.broadcast <- fmt.Sprintf("hub.disconnect: %v disconnected", connection)
+
+	//Unless register and unregister have a buffer, make sure any messaging during these
+	//processes is concurrent.
+	go func() { h.broadcast <- fmt.Sprintf("hub.disconnect: %v disconnected", connection) }()
 	fmt.Printf("\nhub.disconnect: FINAL NOTICE %v disconnected FINAL NOTICE\n", connection)
+	fmt.Printf("hub.connect: %d clients currently connected\n", numCons)
 }
 
 func (h *hub) bcast(message string) {

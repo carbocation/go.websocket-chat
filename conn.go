@@ -21,6 +21,9 @@ type connection struct {
 	ws *websocket.Conn
 
 	// Buffered channel of outbound messages.
+	//If the buffer is reached, the client will be
+	//considered to have timed out and disconnected.
+	//This can really only happen if message order is not preserved.
 	send chan string
 
 	//Have we received a kill signal?
@@ -30,7 +33,7 @@ type connection struct {
 }
 
 func randDelay() time.Duration {
-	return time.Duration(rand.Intn(10)) * time.Second
+	return time.Duration(rand.Intn(1500)) * time.Millisecond
 }
 
 //Sends a message to the user at the other end of this websocket connection
