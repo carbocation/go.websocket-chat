@@ -48,6 +48,9 @@ func (c *connection) Send(message string, fin chan struct{}) {
 	}
 	c.mu.RUnlock()
 
+	//We don't want to try to send over the channel if another
+	//goroutine has closed this channel in the meantime. Thus, we
+	//must block writing before we send over this channel.
 	c.mu.Lock()
 	select {
 	//If the message is sent over the websocket, unlock this connection and continue
