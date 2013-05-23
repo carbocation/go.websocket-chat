@@ -48,7 +48,8 @@ func (h *hub) run() {
 		case message := <-h.broadcast:
 			//We've received a message that is potentially supposed to be broadcast
 
-			//If not a goroutine messages will go in order (unless there is a goroutine internally)
+			//If not a goroutine messages will be received by each client in order 
+			//(unless 1: there is a goroutine internally, or 2: hub.broadcast is unbuffered or is over its buffer)
 			//If a goroutine, no guarantee about message order
 			h.bcast(message)
 		}
@@ -69,6 +70,9 @@ func (h *hub) connect(connection *connection) {
 }
 
 func (h *hub) disconnect(connection *connection) {
+	//could wrap these in goroutines with semaphores to make sure
+	//that hub.disconnect() doesn't return until both goroutines are
+	//done
 	h.connections.mu.Lock()
 	delete(h.connections.m, connection)
 	numCons := len(h.connections.m)
@@ -76,10 +80,9 @@ func (h *hub) disconnect(connection *connection) {
 
 	connection.mu.Lock()
 	connection.dead = true
-	connection.mu.Unlock()
-
 	close(connection.send)
 	connection.ws.Close()
+	connection.mu.Unlock()
 
 	//Unless register and unregister have a buffer, make sure any messaging during these
 	//processes is concurrent.
@@ -108,10 +111,9 @@ func (h *hub) bcast(message string) {
 		//Each user may have a different delay, but no user blocks others
 
 		//To simulate different users getting different messages, we'll send timestamps and sleep, too:
-		//TODO TEST THIS with/wo the go
 		fmt.Printf("hub.bcast: conn.Send'ing message '''%v''' to conn %v\n", message, conn)
-
-		//If this is a goroutine, then mutex
+		
+		//Do not wait for one client's send before launching the next 
 		go conn.Send(message, finChan)
 		i++
 	}
