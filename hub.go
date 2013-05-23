@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"sync"
-	"time"
+	//"time"
 )
 
 type connectionMap struct {
@@ -48,7 +48,7 @@ func (h *hub) run() {
 
 			//If not a goroutine messages will go in order (unless there is a goroutine internally)
 			//If a goroutine, no guarantee about message order
-			go h.bcast(message)
+			h.bcast(message)
 		}
 	}
 }
@@ -91,8 +91,10 @@ func (h *hub) bcast(message string) {
 	// as they would both protect the map just until each connection was launched (but not finished).
 	//If conn.Send() is called as a normal routine, then   
 	h.connections.mu.RLock()
-	defer h.connections.mu.RUnlock()
 
+	//Count launched routines
+	i := 0
+	finChan := make(chan struct{})
 	for conn := range h.connections.m {
 		//For every connected user, do something with the message or disconnect
 		//Each user may have a different delay, but no user blocks others
@@ -102,6 +104,20 @@ func (h *hub) bcast(message string) {
 		fmt.Printf("hub.bcast: conn.Send'ing message '''%v''' to conn %v\n", message, conn)
 		
 		//If this is a goroutine, then mutex  
-		go conn.Send(message)
+		go conn.Send(message, finChan)
+		i++
 	}
+	
+	//Done iterating over the map
+	h.connections.mu.RUnlock()
+	
+	//Drain all finChan values; afterwards, we'll unblock
+	for i > 0 {
+		select {
+		case <-finChan:
+			i--
+		}
+	}
+	
+	fmt.Printf("hub.bcast: bcast'ing message ```%v``` is done.", message)
 }
