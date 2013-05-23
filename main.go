@@ -1,12 +1,13 @@
 package main
 
 import (
-	"code.google.com/p/go.net/websocket"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"text/template"
+
+	"code.google.com/p/go.net/websocket"
 )
 
 var addr = flag.String("addr", ":8080", "http service address")

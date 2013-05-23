@@ -41,7 +41,7 @@ func (c *connection) Send(message string, fin chan struct{}) {
 	time.Sleep(delay)
 	defer func() {
 		fmt.Printf("conn.Send: message '''%s''' to %v happened after %v\n", message, c, delay)
-		
+
 		//Tell the calling function that this goroutine is done sending
 		fin <- struct{}{}
 	}()
@@ -106,16 +106,16 @@ func (c *connection) writer() {
 }
 
 //TODO(james):
-//When registering the handler, pull out the ID that they registered on. 
+//When registering the handler, pull out the ID that they registered on.
 //That will be the channel ID, which determines which hub they register upon.
-//Each hub will exist as a separate goroutine. Thus, each page will have a 
+//Each hub will exist as a separate goroutine. Thus, each page will have a
 //different non-blocking hub, but all messages on a given page will be in order.
 
 //TODO(james):
-//When sending new data over the socket, look up all parent IDs in an 
-// ancestry cache; if that's empty then check DB. Finally, send the 
+//When sending new data over the socket, look up all parent IDs in an
+// ancestry cache; if that's empty then check DB. Finally, send the
 // data to anyone registered to any ancestor channels.
- 
+
 func wsHandler(ws *websocket.Conn) {
 	//Buffer up to 256 messages for this client
 	c := &connection{send: make(chan string, 256), ws: ws}
