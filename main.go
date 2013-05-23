@@ -26,6 +26,7 @@ func injectorHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+	fmt.Println("Launched")
 	flag.Parse()
 	go h.run()
 	http.HandleFunc("/", homeHandler)
