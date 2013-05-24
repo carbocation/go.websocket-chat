@@ -31,7 +31,7 @@
     });
 
     if (window["WebSocket"]) {
-        conn = new WebSocket("ws://{{$}}/ws");
+        conn = new WebSocket("ws://{{.Host}}/ws/{{.ID}}");
         conn.onclose = function(evt) {
             appendLog($("<div><b>Connection closed.</b></div>"))
         }
@@ -82,6 +82,8 @@ body {
 </style>
 </head>
 <body>
+{{.ID}}
+{{.Host}}
 <div id="log"></div>
 <form id="form">
     <input type="submit" value="Send" />

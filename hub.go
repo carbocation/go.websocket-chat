@@ -5,6 +5,51 @@ import (
 	"sync"
 )
 
+type hubMap struct {
+	m  map[string](*hub)
+	mu sync.RWMutex
+}
+
+func (all *hubMap) BroadcastAll(input string) {
+	all.mu.Lock()
+	defer all.mu.Unlock()
+
+	for _, h := range all.m {
+		h.broadcast <- input
+	}
+
+	return
+}
+
+func GetHub(id string) *hub {
+	hubs.mu.RLock()
+
+	//Hub has already been created
+	if hubs.m[id] != nil {
+		defer hubs.mu.RUnlock()
+		fmt.Printf("GetHub: hub %s already exists\n", id)
+		return hubs.m[id]
+	}
+	hubs.mu.RUnlock()
+
+	//Hub has not been created
+	hubs.mu.Lock()
+	defer hubs.mu.Unlock()
+
+	h := &hub{
+		id:          id,
+		broadcast:   make(chan string, 256), //Guarantee up to 256 messages in order
+		register:    make(chan *connection),
+		unregister:  make(chan *connection),
+		connections: connectionMap{m: make(map[*connection]struct{})},
+	}
+	fmt.Printf("hubs.m is %+v", hubs.m)
+	hubs.m[id] = h
+	go h.run()
+	fmt.Printf("GetHub: new hub %s created\n", id)
+	return h
+}
+
 type connectionMap struct {
 	m  map[*connection]struct{}
 	mu sync.RWMutex
@@ -12,6 +57,8 @@ type connectionMap struct {
 }
 
 type hub struct {
+	id string
+
 	// Registered connections.
 	connections connectionMap
 
@@ -27,15 +74,6 @@ type hub struct {
 	unregister chan *connection
 }
 
-func NewHub() *hub {
-	return &hub{
-		broadcast:   make(chan string, 256), //Guarantee up to 256 messages in order
-		register:    make(chan *connection),
-		unregister:  make(chan *connection),
-		connections: connectionMap{m: make(map[*connection]struct{})},
-	}
-}
-
 func (h *hub) run() {
 	for {
 		select {
@@ -48,7 +86,7 @@ func (h *hub) run() {
 		case message := <-h.broadcast:
 			//We've received a message that is potentially supposed to be broadcast
 
-			//If not a goroutine messages will be received by each client in order 
+			//If not a goroutine messages will be received by each client in order
 			//(unless 1: there is a goroutine internally, or 2: hub.broadcast is unbuffered or is over its buffer)
 			//If a goroutine, no guarantee about message order
 			h.bcast(message)
@@ -64,7 +102,10 @@ func (h *hub) connect(connection *connection) {
 
 	//Unless register and unregister have a buffer, make sure any messaging during these
 	//processes is concurrent.
-	go func() { h.broadcast <- fmt.Sprintf("hub.connect: %v connected", connection) }()
+	go func() {
+		h.broadcast <- fmt.Sprintf("hub.connect: %v connected", connection)
+		h.broadcast <- fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id)
+	}()
 	fmt.Printf("hub.connect: %v connected\n", connection)
 	fmt.Printf("hub.connect: %d clients currently connected\n", numCons)
 }
@@ -86,7 +127,10 @@ func (h *hub) disconnect(connection *connection) {
 
 	//Unless register and unregister have a buffer, make sure any messaging during these
 	//processes is concurrent.
-	go func() { h.broadcast <- fmt.Sprintf("hub.disconnect: %v disconnected", connection) }()
+	go func() {
+		h.broadcast <- fmt.Sprintf("hub.disconnect: %v disconnected", connection)
+		h.broadcast <- fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id)
+	}()
 	fmt.Printf("\nhub.disconnect: FINAL NOTICE %v disconnected FINAL NOTICE\n", connection)
 	fmt.Printf("hub.connect: %d clients currently connected\n", numCons)
 }
@@ -112,9 +156,9 @@ func (h *hub) bcast(message string) {
 
 		//To simulate different users getting different messages, we'll send timestamps and sleep, too:
 		fmt.Printf("hub.bcast: conn.Send'ing message '''%v''' to conn %v\n", message, conn)
-		
-		//Do not wait for one client's send before launching the next 
-		go conn.Send(message, finChan)
+
+		//Do not wait for one client's send before launching the next
+		go conn.Send(message, finChan, h)
 		i++
 	}
 

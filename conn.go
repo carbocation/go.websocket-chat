@@ -32,7 +32,7 @@ type connection struct {
 
 //Sends a message to the user at the other end of this websocket connection
 //Notify the hub when finished by sending an empty struct over the fin channel
-func (c *connection) Send(message string, fin chan struct{}) {
+func (c *connection) Send(message string, fin chan struct{}, h *hub) {
 	defer func() {
 		fmt.Printf("conn.Send: message '''%s''' to %v\n", message, c)
 
@@ -69,7 +69,7 @@ func (c *connection) Send(message string, fin chan struct{}) {
 }
 
 //Send messages for broadcasting
-func (c *connection) reader() {
+func (c *connection) reader(h *hub) {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
@@ -100,38 +100,4 @@ func (c *connection) writer() {
 			break
 		}
 	}
-}
-
-//TODO(james):
-//When registering the handler, pull out the ID that they registered on.
-//That will be the channel ID, which determines which hub they register upon.
-//Each hub will exist as a separate goroutine. Thus, each page will have a
-//different non-blocking hub, but all messages on a given page will be in order.
-
-//TODO(james):
-//When sending new data over the socket, look up all parent IDs in an
-// ancestry cache; if that's empty then check DB. Finally, send the
-// data to anyone registered to any ancestor channels.
-
-func wsHandler(ws *websocket.Conn) {
-	//When we try to handle this, see if the hub exists.
-	//If not, create it.
-	if h == nil {
-		h = NewHub()
-		go h.run()
-	}
-	//Buffer up to 256 messages for this client
-	c := &connection{send: make(chan string, 256), ws: ws}
-
-	//Register this connection into the (global var) hub
-	h.register <- c
-
-	//If this deferred function gets called, it implies that
-	// writer and reader already exited
-	defer func() {
-		h.unregister <- c
-		fmt.Printf("conn.wsHandler: SOCKET CLOSED %v is completely closed SOCKET CLOSED\n", c)
-	}()
-	go c.writer()
-	c.reader()
 }
