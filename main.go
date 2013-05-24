@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"text/template"
+	"html/template"
 
 	"code.google.com/p/go.net/websocket"
+	"github.com/carbocation/gotogether"
 	"github.com/gorilla/mux"
 )
 
@@ -16,7 +17,7 @@ var r *mux.Router
 var hubs *hubMap = &hubMap{m: map[string]*hub{}}
 
 var addr = flag.String("addr", ":9997", "http service address")
-var homeTempl = template.Must(template.ParseFiles("home.html"))
+var homeTempl = template.Must(gotogether.LoadTemplates(template.New("home.html"),"templates/home.html"))
 
 func homeHandler(w http.ResponseWriter, req *http.Request) {
 	path, _ := r.Get("chat").URLPath("id", "Room 1")
@@ -33,6 +34,7 @@ func chatHandler(w http.ResponseWriter, req *http.Request) {
 		Host: req.Host,
 		ID:   mux.Vars(req)["id"],
 	}
+	//gotogether.LoadTemplates(
 	homeTempl.Execute(w, data)
 }
 
@@ -89,6 +91,9 @@ func main() {
 	r.HandleFunc("/injector", injectorHandler)
 	r.HandleFunc(`/{id:[_!.,+\- a-zA-Z0-9]+}`, chatHandler).Name("chat")
 	r.Handle(`/ws/{id:[_!.,+\- a-zA-Z0-9]+}`, websocket.Handler(wsHandler))
+	r.HandleFunc("/loaderio-766fe6ab96dba175477e09ae8baf291c/", func(w http.ResponseWriter, req *http.Request) {
+		fmt.Fprintf(w, "loaderio-766fe6ab96dba175477e09ae8baf291c")
+	})
 
 	if err := http.ListenAndServe(*addr, r); err != nil {
 		log.Fatal("ListenAndServe:", err)
