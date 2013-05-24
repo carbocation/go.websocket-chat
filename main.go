@@ -12,12 +12,20 @@ import (
 )
 
 //Main hub lives here
+var r *mux.Router
 var hubs *hubMap = &hubMap{m: map[string]*hub{}}
 
-var addr = flag.String("addr", ":8080", "http service address")
+var addr = flag.String("addr", ":9997", "http service address")
 var homeTempl = template.Must(template.ParseFiles("home.html"))
 
-func homeHandler(c http.ResponseWriter, req *http.Request) {
+func homeHandler(w http.ResponseWriter, req *http.Request) {
+	path, _ := r.Get("chat").URLPath("id", "Room 1")
+	http.Redirect(w, req, path.String(), http.StatusFound)
+	return
+	//homeTempl.Execute(w, data)
+}
+
+func chatHandler(w http.ResponseWriter, req *http.Request) {
 	data := struct {
 		Host string
 		ID   string
@@ -25,7 +33,7 @@ func homeHandler(c http.ResponseWriter, req *http.Request) {
 		Host: req.Host,
 		ID:   mux.Vars(req)["id"],
 	}
-	homeTempl.Execute(c, data)
+	homeTempl.Execute(w, data)
 }
 
 func injectorHandler(w http.ResponseWriter, req *http.Request) {
@@ -76,10 +84,11 @@ func main() {
 	fmt.Printf("Hubmap: %+v", hubs)
 	flag.Parse()
 
-	r := mux.NewRouter()
-	r.HandleFunc("/{id:[0-9]+}", homeHandler)
-	r.Handle("/ws/{id:[0-9]+}", websocket.Handler(wsHandler))
+	r = mux.NewRouter()
+	r.HandleFunc("/", homeHandler)
 	r.HandleFunc("/injector", injectorHandler)
+	r.HandleFunc(`/{id:[_!.,+\- a-zA-Z0-9]+}`, chatHandler).Name("chat")
+	r.Handle(`/ws/{id:[_!.,+\- a-zA-Z0-9]+}`, websocket.Handler(wsHandler))
 
 	if err := http.ListenAndServe(*addr, r); err != nil {
 		log.Fatal("ListenAndServe:", err)

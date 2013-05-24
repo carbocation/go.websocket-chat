@@ -62,7 +62,7 @@ body {
     margin: 0;
     padding: 0.5em 0.5em 0.5em 0.5em;
     position: absolute;
-    top: 0.5em;
+    top: 2.5em;
     left: 0.5em;
     right: 0.5em;
     bottom: 3em;
@@ -82,12 +82,11 @@ body {
 </style>
 </head>
 <body>
-{{.ID}}
-{{.Host}}
+<h1>{{.ID}}</h1>
 <div id="log"></div>
 <form id="form">
     <input type="submit" value="Send" />
-    <input type="text" id="msg" size="64"/>
+    <input type="text" id="msg" size="128"/>
 </form>
 </body>
 </html>
