@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
-	"html/template"
 
 	"code.google.com/p/go.net/websocket"
 	"github.com/carbocation/gotogether"
@@ -17,7 +17,7 @@ var r *mux.Router
 var hubs *hubMap = &hubMap{m: map[string]*hub{}}
 
 var addr = flag.String("addr", ":9997", "http service address")
-var homeTempl = template.Must(gotogether.LoadTemplates(template.New("home.html"),"templates/home.html"))
+var homeTempl = template.Must(gotogether.LoadTemplates(template.New("home.html"), "templates/home.html"))
 
 func homeHandler(w http.ResponseWriter, req *http.Request) {
 	path, _ := r.Get("chat").URLPath("id", "Room 1")
