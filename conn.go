@@ -1,10 +1,3 @@
-/*
-Connection tools.
-
-Note that these depend on the existence of a package-global variable 'h'
-that is the hub of all connections.
-
-*/
 package main
 
 import (

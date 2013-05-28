@@ -42,7 +42,11 @@ func injectorHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintln(w, "Thanks for sending your message.")
 
 	go func() {
-		hubs.BroadcastAll([]byte("A third party injected this message for fun or for profit."))
+		msg := []byte("abcdefghijklmnopqrstuvwxyz0123456789")
+		for i := 0; i< 20; i++ {
+			msg = append(msg, []byte("abcdefghijklmnopqrstuvwxyz0123456789")...)
+		}
+		hubs.BroadcastAll(msg)
 	}()
 }
 
