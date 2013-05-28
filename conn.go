@@ -8,10 +8,26 @@ that is the hub of all connections.
 package main
 
 import (
-	"fmt"
+	"io/ioutil"
+	"log"
 	"sync"
+	"time"
 
-	"code.google.com/p/go.net/websocket"
+	"github.com/garyburd/go-websocket/websocket"
+)
+
+const (
+	// Time allowed to write a message to the client.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next message from the client.
+	readWait = 60 * time.Second
+
+	// Send pings to client with this period. Must be less than readWait.
+	pingPeriod = (readWait * 9) / 10
+
+	// Maximum message size allowed from client.
+	maxMessageSize = 512
 )
 
 type connection struct {
@@ -22,7 +38,7 @@ type connection struct {
 	//If the buffer is reached, the client will be
 	//considered to have timed out and disconnected.
 	//This can really only happen if message order is not preserved.
-	send chan string
+	send chan []byte
 
 	//Have we received a kill signal?
 	dead bool
@@ -32,9 +48,9 @@ type connection struct {
 
 //Sends a message to the user at the other end of this websocket connection
 //Notify the hub when finished by sending an empty struct over the fin channel
-func (c *connection) Send(message string, fin chan struct{}, h *hub) {
+func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 	defer func() {
-		fmt.Printf("conn.Send: message '''%s''' to %v\n", message, c)
+		log.Printf("conn.Send: message '''%s''' to %v\n", string(message), c)
 
 		//Tell the calling function that this goroutine is done sending
 		fin <- struct{}{}
@@ -61,7 +77,7 @@ func (c *connection) Send(message string, fin chan struct{}, h *hub) {
 	//assume that the user disconnected or is just stuck.
 	default:
 		//Tell the hub to unregister us, close the send channel, and close the websocket
-		fmt.Printf("conn.Send: Implied disconnect of %+v\n", c)
+		log.Printf("conn.Send: Implied disconnect of %+v\n", c)
 		//Unlock before unregistering since the act of unregistering triggers changes in c
 		c.mu.Unlock()
 		h.unregister <- c
@@ -73,18 +89,33 @@ func (c *connection) reader(h *hub) {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
-	defer fmt.Printf("conn.reader: reader for %+v exited\n", c)
+	defer log.Printf("conn.reader: reader for %+v exited\n", c)
+	c.ws.SetReadLimit(maxMessageSize)
+	c.ws.SetReadDeadline(time.Now().Add(readWait))
 	for {
-		var message string
-		err := websocket.Message.Receive(c.ws, &message)
+		op, r, err := c.ws.NextReader()
 		if err != nil {
-			//There will be no message to send to the hub
 			break
 		}
 
-		//Send the message to the hub
-		h.broadcast <- message
+		switch op {
+		case websocket.OpPong:
+			c.ws.SetReadDeadline(time.Now().Add(readWait))
+		case websocket.OpText:
+			message, err := ioutil.ReadAll(r)
+			if err != nil {
+				break
+			}
+			//Send the message to the hub
+			h.broadcast <- message
+		}
 	}
+}
+
+// write writes a message with the given opCode and payload.
+func (c *connection) write(opCode int, payload []byte) error {
+	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
+	return c.ws.WriteMessage(opCode, payload)
 }
 
 //Messages that were broadcast to this particular connection
@@ -93,11 +124,37 @@ func (c *connection) writer() {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
-	defer fmt.Printf("conn.writer: writer for %+v exited\n", c)
-	for message := range c.send {
-		err := websocket.Message.Send(c.ws, message)
-		if err != nil {
-			break
+	defer log.Printf("conn.writer: writer for %+v exited\n", c)
+
+	ticker := time.NewTicker(pingPeriod)
+	defer func() { ticker.Stop() }()
+
+	for {
+		select {
+		//Client will get a message
+		case message, ok := <-c.send:
+			if !ok {
+				c.write(websocket.OpClose, []byte{})
+				return
+			}
+			if err := c.write(websocket.OpText, message); err != nil {
+				return
+			}
+		//Client isn't getting a message in time to keep them alive, so
+		// send a ping
+		case <-ticker.C:
+			if err := c.write(websocket.OpPing, []byte{}); err != nil {
+				return
+			}
 		}
 	}
+
+	/*
+		for message := range c.send {
+			err := websocket.Message.Send(c.ws, message)
+			if err != nil {
+				break
+			}
+		}
+	*/
 }
