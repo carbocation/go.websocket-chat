@@ -12,18 +12,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-//Main hub lives here
 var r *mux.Router
-var hubs *hubMap = &hubMap{m: map[string]*hub{}}
-
 var addr = flag.String("addr", ":9997", "http service address")
 var homeTempl = template.Must(gotogether.LoadTemplates(template.New("home.html"), "templates/home.html"))
 
 func homeHandler(w http.ResponseWriter, req *http.Request) {
 	path, _ := r.Get("chat").URLPath("id", "Room 1")
 	http.Redirect(w, req, path.String(), http.StatusFound)
-	return
-	//homeTempl.Execute(w, data)
 }
 
 func chatHandler(w http.ResponseWriter, req *http.Request) {
@@ -34,7 +29,7 @@ func chatHandler(w http.ResponseWriter, req *http.Request) {
 		Host: req.Host,
 		ID:   mux.Vars(req)["id"],
 	}
-	//gotogether.LoadTemplates(
+
 	homeTempl.Execute(w, data)
 }
 
@@ -43,7 +38,7 @@ func injectorHandler(w http.ResponseWriter, req *http.Request) {
 
 	go func() {
 		msg := []byte("abcdefghijklmnopqrstuvwxyz0123456789")
-		for i := 0; i< 20; i++ {
+		for i := 0; i < 20; i++ {
 			msg = append(msg, []byte("abcdefghijklmnopqrstuvwxyz0123456789")...)
 		}
 		hubs.BroadcastAll(msg)

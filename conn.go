@@ -9,25 +9,11 @@ import (
 	"github.com/garyburd/go-websocket/websocket"
 )
 
-const (
-	// Time allowed to write a message to the client.
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next message from the client.
-	readWait = 60 * time.Second
-
-	// Send pings to client with this period. Must be less than readWait.
-	pingPeriod = (readWait * 9) / 10
-
-	// Maximum message size allowed from client.
-	maxMessageSize = 512
-)
-
 type connection struct {
-	// The websocket connection.
+	//The websocket connection.
 	ws *websocket.Conn
 
-	// Buffered channel of outbound messages.
+	//Buffered channel of outbound messages.
 	//If the buffer is reached, the client will be
 	//considered to have timed out and disconnected.
 	//This can really only happen if message order is not preserved.
@@ -36,11 +22,15 @@ type connection struct {
 	//Have we received a kill signal?
 	dead bool
 
+	//We need to lock the connection, since it can be
+	//shared by multiple hubs (in theory), or have multiple
+	//goroutines accessing it from multiple simultaneous goroutines
 	mu sync.RWMutex
 }
 
-//Sends a message to the user at the other end of this websocket connection
-//Notify the hub when finished by sending an empty struct over the fin channel
+//connection.Send is the interface that hubs and other instruments are allowed to
+//use to send a message to the user at the other end of this websocket connection
+//The hub is notified when finished by sending an empty struct over the fin channel
 func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 	defer func() {
 		log.Printf("conn.Send: message '''%s''' to %v\n", string(message), c)
@@ -77,7 +67,8 @@ func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 	}
 }
 
-//Send messages for broadcasting
+//connection.reader passes messages from the user to the hub for broadcasting.
+//It also handles the 'pong' portion of ping-pong keepalives.
 func (c *connection) reader(h *hub) {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
@@ -88,6 +79,7 @@ func (c *connection) reader(h *hub) {
 	for {
 		op, r, err := c.ws.NextReader()
 		if err != nil {
+			log.Printf("conn.reader: Error trying to broadcast the message: %+v, %+v, %s\n", op, r, err)
 			break
 		}
 
@@ -105,14 +97,17 @@ func (c *connection) reader(h *hub) {
 	}
 }
 
-// write writes a message with the given opCode and payload.
+//connection.write actually sends a message with the given opCode and payload
+//down the wire to the user.
 func (c *connection) write(opCode int, payload []byte) error {
 	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.ws.WriteMessage(opCode, payload)
 }
 
-//Messages that were broadcast to this particular connection
-//go down the wire to the user here.
+//connection.writer waits to send messages that were broadcast to this
+//particular connection down the wire to the user. If none is received
+//in time, it sends a ping for connection keepalive. In this way, timeouts
+//are managed on a per-connection basis.
 func (c *connection) writer() {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
@@ -141,13 +136,4 @@ func (c *connection) writer() {
 			}
 		}
 	}
-
-	/*
-		for message := range c.send {
-			err := websocket.Message.Send(c.ws, message)
-			if err != nil {
-				break
-			}
-		}
-	*/
 }

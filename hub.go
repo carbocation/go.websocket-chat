@@ -6,11 +6,14 @@ import (
 	"sync"
 )
 
+
+//hubMap stores all active hubs
 type hubMap struct {
 	m  map[string](*hub)
 	mu sync.RWMutex
 }
 
+//BroadcastAll sends a message to every client on every hub
 func (all *hubMap) BroadcastAll(input []byte) {
 	all.mu.Lock()
 	defer all.mu.Unlock()
@@ -22,6 +25,8 @@ func (all *hubMap) BroadcastAll(input []byte) {
 	return
 }
 
+//GetHub retrieves the hub with a given ID from the hubMap.
+//If no such hub exists, it creates it.
 func GetHub(id string) *hub {
 	hubs.mu.RLock()
 
@@ -39,7 +44,7 @@ func GetHub(id string) *hub {
 
 	h := &hub{
 		id:          id,
-		broadcast:   make(chan []byte, 256), //Guarantee up to 256 messages in order
+		broadcast:   make(chan []byte, broadcastMessageQueueSize), //Guarantee up to 256 messages in order
 		register:    make(chan *connection),
 		unregister:  make(chan *connection),
 		connections: connectionMap{m: make(map[*connection]struct{})},
@@ -51,12 +56,13 @@ func GetHub(id string) *hub {
 	return h
 }
 
+//connectionMap holds a list of connections attached to a hub
 type connectionMap struct {
 	m  map[*connection]struct{}
 	mu sync.RWMutex
-	//exists bool
 }
 
+//hub contains all information needed to maintain a hub of communicating connections
 type hub struct {
 	id string
 
@@ -140,8 +146,8 @@ func (h *hub) disconnect(connection *connection) {
 			hubs.mu.Lock()
 			defer func() { hubs.mu.Unlock() }()
 			delete(hubs.m, h.id)
-			
-			log.Printf("hub.disconnect: these hubs now exist: %+v\n", hubs.m) 
+
+			log.Printf("hub.disconnect: these hubs now exist: %+v\n", hubs.m)
 		}()
 	}
 }
