@@ -74,8 +74,8 @@ func (c *connection) reader(h *hub) {
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
 	defer log.Printf("conn.reader: reader for %+v exited\n", c)
-	c.ws.SetReadLimit(maxMessageSize)
-	c.ws.SetReadDeadline(time.Now().Add(readWait))
+	c.ws.SetReadLimit(cfg.maxMessageSize)
+	c.ws.SetReadDeadline(time.Now().Add(cfg.readWait))
 	for {
 		op, r, err := c.ws.NextReader()
 		if err != nil {
@@ -85,7 +85,7 @@ func (c *connection) reader(h *hub) {
 
 		switch op {
 		case websocket.OpPong:
-			c.ws.SetReadDeadline(time.Now().Add(readWait))
+			c.ws.SetReadDeadline(time.Now().Add(cfg.readWait))
 		case websocket.OpText:
 			message, err := ioutil.ReadAll(r)
 			if err != nil {
@@ -100,7 +100,7 @@ func (c *connection) reader(h *hub) {
 //connection.write actually sends a message with the given opCode and payload
 //down the wire to the user.
 func (c *connection) write(opCode int, payload []byte) error {
-	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
+	c.ws.SetWriteDeadline(time.Now().Add(cfg.writeWait))
 	return c.ws.WriteMessage(opCode, payload)
 }
 
@@ -114,7 +114,7 @@ func (c *connection) writer() {
 	//defer c.ws.Close()
 	defer log.Printf("conn.writer: writer for %+v exited\n", c)
 
-	ticker := time.NewTicker(pingPeriod)
+	ticker := time.NewTicker(cfg.pingPeriod)
 	defer func() { ticker.Stop() }()
 
 	for {

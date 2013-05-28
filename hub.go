@@ -44,7 +44,7 @@ func GetHub(id string) *hub {
 
 	h := &hub{
 		id:          id,
-		broadcast:   make(chan []byte, broadcastMessageQueueSize), //Guarantee up to 256 messages in order
+		broadcast:   make(chan []byte, cfg.broadcastMessageQueueSize), //Guarantee up to 256 messages in order
 		register:    make(chan *connection),
 		unregister:  make(chan *connection),
 		connections: connectionMap{m: make(map[*connection]struct{})},
