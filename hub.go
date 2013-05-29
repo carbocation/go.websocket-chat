@@ -23,6 +23,19 @@ func BroadcastAll(input []byte) {
 	return
 }
 
+//Multicast sends a message to all hubs listed in []ids.
+//If no such hub exists, nothing happens.
+func Multicast(message []byte, ids []string) {
+	hubs.mu.RLock()
+	defer hubs.mu.RUnlock()
+	fmt.Printf("%+v\n", ids)
+	for _, id := range ids {
+		if hubs.m[id] != nil {
+			hubs.m[id].Broadcast(message)
+		}
+	}
+}
+
 //GetHub retrieves the hub with a given ID from the hubMap.
 //If no such hub exists, it creates it.
 func GetHub(id string) *hub {
@@ -86,6 +99,10 @@ func (h *hub) Unregister(c *connection) {
 	h.unregister <- c
 }
 
+func (h *hub) Broadcast(s []byte) {
+	h.broadcast <- s
+}
+
 func (h *hub) run() {
 	for {
 		select {
@@ -115,8 +132,10 @@ func (h *hub) connect(connection *connection) {
 	//Unless register and unregister have a buffer, make sure any messaging during these
 	//processes is concurrent.
 	go func() {
-		h.broadcast <- []byte(fmt.Sprintf("hub.connect: %v connected", connection))
-		h.broadcast <- []byte(fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id))
+		p, _ := Packetize("new_connection", fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id))
+		h.broadcast <- p
+		p, _ = Packetize("num_connections", numCons)
+		h.broadcast <- p
 	}()
 }
 
@@ -139,8 +158,10 @@ func (h *hub) disconnect(connection *connection) {
 	//processes is concurrent.
 	if numCons > 0 {
 		go func() {
-			h.broadcast <- []byte(fmt.Sprintf("hub.disconnect: %v disconnected", connection))
-			h.broadcast <- []byte(fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id))
+			p, _ := Packetize("lost_connection", fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id))
+			h.broadcast <- p
+			p, _ = Packetize("num_connections", numCons)
+			h.broadcast <- p
 		}()
 	} else {
 		defer func() {
