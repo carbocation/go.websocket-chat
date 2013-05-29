@@ -1,40 +1,46 @@
-/*
-Connection tools.
-
-Note that these depend on the existence of a package-global variable 'h'
-that is the hub of all connections.
-
-*/
-package main
+package wshub
 
 import (
-	"fmt"
+	"io/ioutil"
+	"log"
 	"sync"
+	"time"
 
-	"code.google.com/p/go.net/websocket"
+	"github.com/garyburd/go-websocket/websocket"
 )
 
 type connection struct {
-	// The websocket connection.
+	//The websocket connection.
 	ws *websocket.Conn
 
-	// Buffered channel of outbound messages.
+	//Buffered channel of outbound messages.
 	//If the buffer is reached, the client will be
 	//considered to have timed out and disconnected.
 	//This can really only happen if message order is not preserved.
-	send chan string
+	send chan []byte
 
 	//Have we received a kill signal?
 	dead bool
 
+	//We need to lock the connection, since it can be
+	//shared by multiple hubs (in theory), or have multiple
+	//goroutines accessing it from multiple simultaneous goroutines
 	mu sync.RWMutex
 }
 
-//Sends a message to the user at the other end of this websocket connection
-//Notify the hub when finished by sending an empty struct over the fin channel
-func (c *connection) Send(message string, fin chan struct{}, h *hub) {
+func NewConnection(ws *websocket.Conn, send chan []byte) *connection {
+	return &connection{
+		ws: ws,
+		send: send,
+	}
+}
+
+//connection.Send is the interface that hubs and other instruments are allowed to
+//use to send a message to the user at the other end of this websocket connection
+//The hub is notified when finished by sending an empty struct over the fin channel
+func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 	defer func() {
-		fmt.Printf("conn.Send: message '''%s''' to %v\n", message, c)
+		log.Printf("conn.Send: message '''%s''' to %v\n", string(message), c)
 
 		//Tell the calling function that this goroutine is done sending
 		fin <- struct{}{}
@@ -61,43 +67,80 @@ func (c *connection) Send(message string, fin chan struct{}, h *hub) {
 	//assume that the user disconnected or is just stuck.
 	default:
 		//Tell the hub to unregister us, close the send channel, and close the websocket
-		fmt.Printf("conn.Send: Implied disconnect of %+v\n", c)
+		log.Printf("conn.Send: Implied disconnect of %+v\n", c)
 		//Unlock before unregistering since the act of unregistering triggers changes in c
 		c.mu.Unlock()
 		h.unregister <- c
 	}
 }
 
-//Send messages for broadcasting
-func (c *connection) reader(h *hub) {
+//connection.reader passes messages from the user to the hub for broadcasting.
+//It also handles the 'pong' portion of ping-pong keepalives.
+func (c *connection) Reader(h *hub) {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
-	defer fmt.Printf("conn.reader: reader for %+v exited\n", c)
+	defer log.Printf("conn.reader: reader for %+v exited\n", c)
+	c.ws.SetReadLimit(cfg.maxMessageSize)
+	c.ws.SetReadDeadline(time.Now().Add(cfg.readWait))
 	for {
-		var message string
-		err := websocket.Message.Receive(c.ws, &message)
+		op, r, err := c.ws.NextReader()
 		if err != nil {
-			//There will be no message to send to the hub
+			log.Printf("conn.reader: Error trying to broadcast the message: %+v, %+v, %s\n", op, r, err)
 			break
 		}
 
-		//Send the message to the hub
-		h.broadcast <- message
+		switch op {
+		case websocket.OpPong:
+			c.ws.SetReadDeadline(time.Now().Add(cfg.readWait))
+		case websocket.OpText:
+			message, err := ioutil.ReadAll(r)
+			if err != nil {
+				break
+			}
+			//Send the message to the hub
+			h.broadcast <- message
+		}
 	}
 }
 
-//Messages that were broadcast to this particular connection
-//go down the wire to the user here.
-func (c *connection) writer() {
+//connection.write actually sends a message with the given opCode and payload
+//down the wire to the user.
+func (c *connection) write(opCode int, payload []byte) error {
+	c.ws.SetWriteDeadline(time.Now().Add(cfg.writeWait))
+	return c.ws.WriteMessage(opCode, payload)
+}
+
+//connection.Writer waits to send messages that were broadcast to this
+//particular connection down the wire to the user. If none is received
+//in time, it sends a ping for connection keepalive. In this way, timeouts
+//are managed on a per-connection basis.
+func (c *connection) Writer() {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
-	defer fmt.Printf("conn.writer: writer for %+v exited\n", c)
-	for message := range c.send {
-		err := websocket.Message.Send(c.ws, message)
-		if err != nil {
-			break
+	defer log.Printf("conn.writer: writer for %+v exited\n", c)
+
+	ticker := time.NewTicker(cfg.pingPeriod)
+	defer func() { ticker.Stop() }()
+
+	for {
+		select {
+		//Client will get a message
+		case message, ok := <-c.send:
+			if !ok {
+				c.write(websocket.OpClose, []byte{})
+				return
+			}
+			if err := c.write(websocket.OpText, message); err != nil {
+				return
+			}
+		//Client isn't getting a message in time to keep them alive, so
+		// send a ping
+		case <-ticker.C:
+			if err := c.write(websocket.OpPing, []byte{}); err != nil {
+				return
+			}
 		}
 	}
 }

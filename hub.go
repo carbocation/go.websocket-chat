@@ -1,33 +1,38 @@
-package main
+package wshub
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
+//hubMap stores all active hubs
 type hubMap struct {
 	m  map[string](*hub)
 	mu sync.RWMutex
 }
 
-func (all *hubMap) BroadcastAll(input string) {
-	all.mu.Lock()
-	defer all.mu.Unlock()
+//BroadcastAll sends a message to every client on every hub
+func BroadcastAll(input []byte) {
+	hubs.mu.Lock()
+	defer hubs.mu.Unlock()
 
-	for _, h := range all.m {
+	for _, h := range hubs.m {
 		h.broadcast <- input
 	}
 
 	return
 }
 
+//GetHub retrieves the hub with a given ID from the hubMap.
+//If no such hub exists, it creates it.
 func GetHub(id string) *hub {
 	hubs.mu.RLock()
 
 	//Hub has already been created
 	if hubs.m[id] != nil {
 		defer hubs.mu.RUnlock()
-		fmt.Printf("GetHub: hub %s already exists\n", id)
+		log.Printf("GetHub: hub %s already exists\n", id)
 		return hubs.m[id]
 	}
 	hubs.mu.RUnlock()
@@ -38,24 +43,25 @@ func GetHub(id string) *hub {
 
 	h := &hub{
 		id:          id,
-		broadcast:   make(chan string, 256), //Guarantee up to 256 messages in order
+		broadcast:   make(chan []byte, cfg.broadcastMessageQueueSize), //Guarantee up to 256 messages in order
 		register:    make(chan *connection),
 		unregister:  make(chan *connection),
 		connections: connectionMap{m: make(map[*connection]struct{})},
 	}
-	fmt.Printf("hubs.m is %+v", hubs.m)
+	log.Printf("hubs.m is %+v", hubs.m)
 	hubs.m[id] = h
 	go h.run()
-	fmt.Printf("GetHub: new hub %s created\n", id)
+	log.Printf("GetHub: new hub %s created\n", id)
 	return h
 }
 
+//connectionMap holds a list of connections attached to a hub
 type connectionMap struct {
 	m  map[*connection]struct{}
 	mu sync.RWMutex
-	//exists bool
 }
 
+//hub contains all information needed to maintain a hub of communicating connections
 type hub struct {
 	id string
 
@@ -65,13 +71,21 @@ type hub struct {
 	// Inbound messages from the connections.
 	//The buffer, if any, guarantees the number of
 	//messages which will be received by every client in order
-	broadcast chan string
+	broadcast chan []byte
 
 	// Register requests from the connections.
 	register chan *connection
 
 	// Unregister requests from connections.
 	unregister chan *connection
+}
+
+func (h *hub) Register(c *connection) {
+	h.register <-c
+}
+
+func (h *hub) Unregister(c *connection) {
+	h.unregister <-c
 }
 
 func (h *hub) run() {
@@ -103,11 +117,11 @@ func (h *hub) connect(connection *connection) {
 	//Unless register and unregister have a buffer, make sure any messaging during these
 	//processes is concurrent.
 	go func() {
-		h.broadcast <- fmt.Sprintf("hub.connect: %v connected", connection)
-		h.broadcast <- fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id)
+		h.broadcast <- []byte(fmt.Sprintf("hub.connect: %v connected", connection))
+		h.broadcast <- []byte(fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id))
 	}()
-	fmt.Printf("hub.connect: %v connected\n", connection)
-	fmt.Printf("hub.connect: %d clients currently connected\n", numCons)
+	log.Printf("hub.connect: %v connected\n", connection)
+	log.Printf("hub.connect: %d clients currently connected\n", numCons)
 }
 
 func (h *hub) disconnect(connection *connection) {
@@ -127,15 +141,25 @@ func (h *hub) disconnect(connection *connection) {
 
 	//Unless register and unregister have a buffer, make sure any messaging during these
 	//processes is concurrent.
-	go func() {
-		h.broadcast <- fmt.Sprintf("hub.disconnect: %v disconnected", connection)
-		h.broadcast <- fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id)
-	}()
-	fmt.Printf("\nhub.disconnect: FINAL NOTICE %v disconnected FINAL NOTICE\n", connection)
-	fmt.Printf("hub.connect: %d clients currently connected\n", numCons)
+	if numCons > 0 {
+		go func() {
+			h.broadcast <- []byte(fmt.Sprintf("hub.disconnect: %v disconnected", connection))
+			h.broadcast <- []byte(fmt.Sprintf("%d clients currently connected to hub %s\n", numCons, h.id))
+			log.Printf("\nhub.disconnect: FINAL NOTICE %v disconnected FINAL NOTICE\n", connection)
+			log.Printf("hub.connect: %d clients currently connected\n", numCons)
+		}()
+	} else {
+		defer func() {
+			hubs.mu.Lock()
+			defer func() { hubs.mu.Unlock() }()
+			delete(hubs.m, h.id)
+
+			log.Printf("hub.disconnect: these hubs now exist: %+v\n", hubs.m)
+		}()
+	}
 }
 
-func (h *hub) bcast(message string) {
+func (h *hub) bcast(message []byte) {
 	//RLock here would guarantee that the map won't change while we iterate over it BUT other goroutines
 	// could read the next message simultaneously, so message order is not guaranteed. However, concurrency
 	// is maximized.
@@ -155,7 +179,7 @@ func (h *hub) bcast(message string) {
 		//Each user may have a different delay, but no user blocks others
 
 		//To simulate different users getting different messages, we'll send timestamps and sleep, too:
-		fmt.Printf("hub.bcast: conn.Send'ing message '''%v''' to conn %v\n", message, conn)
+		log.Printf("hub.bcast: conn.Send'ing message '''%v''' to conn %v\n", string(message), conn)
 
 		//Do not wait for one client's send before launching the next
 		go conn.Send(message, finChan, h)
@@ -173,5 +197,5 @@ func (h *hub) bcast(message string) {
 		}
 	}
 
-	fmt.Printf("hub.bcast: bcast'ing message ```%v``` is done.", message)
+	log.Printf("hub.bcast: bcast'ing message ```%v``` is done.", string(message))
 }
