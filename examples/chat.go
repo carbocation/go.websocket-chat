@@ -43,8 +43,6 @@ func chatHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func injectorHandler(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintln(w, "Thanks for sending your message.")
-
 	go func() {
 		msg := []byte("abcdefghijklmnopqrstuvwxyz0123456789")
 		for i := 0; i < 20; i++ {
@@ -64,9 +62,7 @@ func wsHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	//When we try to handle this, see if the hub exists.
-	//If not, create it.
 	id := mux.Vars(req)["id"]
-
 	wshub.Launch(ws, id)
 }
 

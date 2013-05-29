@@ -2,7 +2,6 @@ package wshub
 
 import (
 	"io/ioutil"
-	"log"
 	"sync"
 	"time"
 
@@ -30,7 +29,7 @@ type connection struct {
 
 func NewConnection(ws *websocket.Conn, send chan []byte) *connection {
 	return &connection{
-		ws: ws,
+		ws:   ws,
 		send: send,
 	}
 }
@@ -40,8 +39,6 @@ func NewConnection(ws *websocket.Conn, send chan []byte) *connection {
 //The hub is notified when finished by sending an empty struct over the fin channel
 func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 	defer func() {
-		log.Printf("conn.Send: message '''%s''' to %v\n", string(message), c)
-
 		//Tell the calling function that this goroutine is done sending
 		fin <- struct{}{}
 	}()
@@ -66,8 +63,6 @@ func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 	//If we cannot send, this means that the user's buffer is full. At this point we basically
 	//assume that the user disconnected or is just stuck.
 	default:
-		//Tell the hub to unregister us, close the send channel, and close the websocket
-		log.Printf("conn.Send: Implied disconnect of %+v\n", c)
 		//Unlock before unregistering since the act of unregistering triggers changes in c
 		c.mu.Unlock()
 		h.unregister <- c
@@ -79,14 +74,11 @@ func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 func (c *connection) Reader(h *hub) {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
-	//defer c.ws.Close()
-	defer log.Printf("conn.reader: reader for %+v exited\n", c)
 	c.ws.SetReadLimit(cfg.maxMessageSize)
 	c.ws.SetReadDeadline(time.Now().Add(cfg.readWait))
 	for {
 		op, r, err := c.ws.NextReader()
 		if err != nil {
-			log.Printf("conn.reader: Error trying to broadcast the message: %+v, %+v, %s\n", op, r, err)
 			break
 		}
 
@@ -118,8 +110,6 @@ func (c *connection) write(opCode int, payload []byte) error {
 func (c *connection) Writer() {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
-	//defer c.ws.Close()
-	defer log.Printf("conn.writer: writer for %+v exited\n", c)
 
 	ticker := time.NewTicker(cfg.pingPeriod)
 	defer func() { ticker.Stop() }()
