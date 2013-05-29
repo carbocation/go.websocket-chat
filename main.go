@@ -9,7 +9,6 @@ offered under the Apache License, Version 2.0.
 package wshub
 
 import (
-	"log"
 	"github.com/garyburd/go-websocket/websocket"
 )
 
@@ -36,13 +35,11 @@ func Launch(ws *websocket.Conn, id string) {
 	//Register this connection into the (global var) hub
 	h := GetHub(id)
 	h.Register(c)
-	log.Printf("wsHandler: REGISTERED CONNECTION TO HUB%s\n", id)
 
 	//If this deferred function gets called, it implies that
 	// writer and reader already exited
 	defer func() {
 		h.Unregister(c)
-		log.Printf("conn.wsHandler: SOCKET CLOSED %v is completely closed SOCKET CLOSED\n", c)
 	}()
 	go c.Writer()
 	c.Reader(h)
