@@ -6,15 +6,24 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 
-	"github.com/carbocation/gotogether"
+	"carbocation.com/code/go.websocket-chat"
 	"github.com/garyburd/go-websocket/websocket"
 	"github.com/gorilla/mux"
 )
 
+func init() {
+	wshub.Initialize(10*time.Second,
+		60*time.Second,
+		60*time.Second*9/10,
+		4096,
+		256)
+}
+
 var r *mux.Router
 var addr = flag.String("addr", ":9997", "http service address")
-var homeTempl = template.Must(gotogether.LoadTemplates(template.New("home.html"), "templates/home.html"))
+var homeTempl = template.Must(template.New("home.html").Parse(mainTemplate))
 
 func homeHandler(w http.ResponseWriter, req *http.Request) {
 	path, _ := r.Get("chat").URLPath("id", "Room 1")
@@ -41,19 +50,10 @@ func injectorHandler(w http.ResponseWriter, req *http.Request) {
 		for i := 0; i < 20; i++ {
 			msg = append(msg, []byte("abcdefghijklmnopqrstuvwxyz0123456789")...)
 		}
-		hubs.BroadcastAll(msg)
+		wshub.BroadcastAll(msg)
 	}()
 }
 
-//TODO(james):
-//When registering the handler, pull out the ID that they registered on.
-//That will be the channel ID, which determines which hub they register upon.
-//Each hub will exist as a separate goroutine. Thus, each page will have a
-//different non-blocking hub, but all messages on a given page will be in order.
-//TODO(james):
-//When sending new data over the socket, look up all parent IDs in an
-// ancestry cache; if that's empty then check DB. Finally, send the
-// data to anyone registered to any ancestor channels.
 func wsHandler(w http.ResponseWriter, req *http.Request) {
 	ws, err := websocket.Upgrade(w, req.Header, nil, 1024, 1024)
 	if _, ok := err.(websocket.HandshakeError); ok {
@@ -66,31 +66,12 @@ func wsHandler(w http.ResponseWriter, req *http.Request) {
 	//When we try to handle this, see if the hub exists.
 	//If not, create it.
 	id := mux.Vars(req)["id"]
-	log.Printf("wsHandler: Websocket connected on %s\n", id)
 
-	//Buffer up to 256 messages for this client
-	c := &connection{send: make(chan []byte, 256), ws: ws}
-
-	//Register this connection into the (global var) hub
-	log.Printf("wsHandler: GOT HERE%s\n", id)
-	h := GetHub(id)
-	log.Printf("wsHandler: CREATED HUB%s\n", id)
-	h.register <- c
-	log.Printf("wsHandler: REGISTERED CONNECTION TO HUB%s\n", id)
-
-	//If this deferred function gets called, it implies that
-	// writer and reader already exited
-	defer func() {
-		h.unregister <- c
-		log.Printf("conn.wsHandler: SOCKET CLOSED %v is completely closed SOCKET CLOSED\n", c)
-	}()
-	go c.writer()
-	c.reader(h)
+	wshub.Launch(ws, id)
 }
 
 func main() {
 	log.Println("Launched")
-	log.Printf("Hubmap: %+v", hubs)
 	flag.Parse()
 
 	r = mux.NewRouter()

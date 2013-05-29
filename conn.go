@@ -1,4 +1,4 @@
-package main
+package wshub
 
 import (
 	"io/ioutil"
@@ -26,6 +26,13 @@ type connection struct {
 	//shared by multiple hubs (in theory), or have multiple
 	//goroutines accessing it from multiple simultaneous goroutines
 	mu sync.RWMutex
+}
+
+func NewConnection(ws *websocket.Conn, send chan []byte) *connection {
+	return &connection{
+		ws: ws,
+		send: send,
+	}
 }
 
 //connection.Send is the interface that hubs and other instruments are allowed to
@@ -69,7 +76,7 @@ func (c *connection) Send(message []byte, fin chan struct{}, h *hub) {
 
 //connection.reader passes messages from the user to the hub for broadcasting.
 //It also handles the 'pong' portion of ping-pong keepalives.
-func (c *connection) reader(h *hub) {
+func (c *connection) Reader(h *hub) {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()
@@ -104,11 +111,11 @@ func (c *connection) write(opCode int, payload []byte) error {
 	return c.ws.WriteMessage(opCode, payload)
 }
 
-//connection.writer waits to send messages that were broadcast to this
+//connection.Writer waits to send messages that were broadcast to this
 //particular connection down the wire to the user. If none is received
 //in time, it sends a ping for connection keepalive. In this way, timeouts
 //are managed on a per-connection basis.
-func (c *connection) writer() {
+func (c *connection) Writer() {
 	//Shouldn't need to c.ws.Close() here because ultimately
 	// this will cause the deferred unregister in wsHandler() to fire
 	//defer c.ws.Close()

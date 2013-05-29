@@ -1,11 +1,10 @@
-package main
+package wshub
 
 import (
 	"fmt"
 	"log"
 	"sync"
 )
-
 
 //hubMap stores all active hubs
 type hubMap struct {
@@ -14,11 +13,11 @@ type hubMap struct {
 }
 
 //BroadcastAll sends a message to every client on every hub
-func (all *hubMap) BroadcastAll(input []byte) {
-	all.mu.Lock()
-	defer all.mu.Unlock()
+func BroadcastAll(input []byte) {
+	hubs.mu.Lock()
+	defer hubs.mu.Unlock()
 
-	for _, h := range all.m {
+	for _, h := range hubs.m {
 		h.broadcast <- input
 	}
 
@@ -79,6 +78,14 @@ type hub struct {
 
 	// Unregister requests from connections.
 	unregister chan *connection
+}
+
+func (h *hub) Register(c *connection) {
+	h.register <-c
+}
+
+func (h *hub) Unregister(c *connection) {
+	h.unregister <-c
 }
 
 func (h *hub) run() {
