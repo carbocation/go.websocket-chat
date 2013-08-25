@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"carbocation.com/code/go.websocket-chat"
+	"github.com/carbocation/go.websocket-chat"
 	"github.com/garyburd/go-websocket/websocket"
 	"github.com/gorilla/mux"
 )
